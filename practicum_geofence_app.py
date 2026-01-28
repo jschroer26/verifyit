@@ -171,6 +171,7 @@ def add_geofence_and_verification(clean_log: pd.DataFrame, site_coords: dict) ->
         return haversine_distance_m(lat_s, lon_s, lat_site, lon_site)
 
     log["Distance_From_Site_m"] = log.apply(compute_distance, axis=1)
+    log["Location_Source_Flag"] = log["Distance_From_Site_m"].apply(classify_location_source)
 
     def status_from_distance(d):
         if pd.isna(d):
