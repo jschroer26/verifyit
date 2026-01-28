@@ -36,6 +36,29 @@ def haversine_distance_m(lat1, lon1, lat2, lon2):
     R = 6371000  # Earth radius (m)
     return R * c
 
+def classify_location_source(distance_m):
+    """
+    Heuristic classification of likely location source quality.
+    Flags data quality, not student intent.
+    """
+    if distance_m is None:
+        return "No location data"
+
+    try:
+        d = float(distance_m)
+    except (TypeError, ValueError):
+        return "No location data"
+
+    if np.isnan(d):
+        return "No location data"
+
+    if d > 5000:
+        return "Approximate / network-based location (likely not GPS)"
+    if d > 1000:
+        return "Low-accuracy location (possible Wi-Fi or cell tower)"
+    if d > 300:
+        return "Possible GPS drift or off-site submission"
+    return "Likely GPS on-site"
 
 def load_site_coordinates(site_file) -> dict:
     """
@@ -171,11 +194,13 @@ def add_geofence_and_verification(clean_log: pd.DataFrame, site_coords: dict) ->
         return haversine_distance_m(lat_s, lon_s, lat_site, lon_site)
 
     log["Distance_From_Site_m"] = log.apply(compute_distance, axis=1)
+
+    # ✅ Single, authoritative location-quality flag
     log["Location_Source_Flag"] = log["Distance_From_Site_m"].apply(classify_location_source)
 
     def status_from_distance(d):
         if pd.isna(d):
-            return "No Location/No Site"
+            return "No Location / No Site"
         if d <= 150:
             return "Verified"
         if d <= 400:
@@ -190,26 +215,11 @@ def add_geofence_and_verification(clean_log: pd.DataFrame, site_coords: dict) ->
         0.0,
     )
 
-    # ---- Human-readable distance (km) ----
+    # Optional but very helpful for debugging / transparency
     log["Distance_km"] = log["Distance_From_Site_m"] / 1000
 
-    # ---- Explainable location flag ----
-    def location_flag(row):
-        d = row["Distance_From_Site_m"]
-
-        if pd.isna(d):
-            return "No location data"
-        if d <= 150:
-            return "On-site (GPS / Wi-Fi)"
-        if d <= 400:
-            return "Near site (possible GPS drift)"
-        if d <= 5000:
-            return "Off-site (likely Wi-Fi / IP location)"
-        return "Remote location (likely desktop submission)"
-
-    log["Location_Source_Flag"] = log.apply(location_flag, axis=1)
-
     return log
+
 
 def build_student_summary(log: pd.DataFrame) -> pd.DataFrame:
     """Summary: total verified hours by student."""
