@@ -154,8 +154,8 @@ def clean_qualtrics_df(raw_df: pd.DataFrame) -> pd.DataFrame:
 
 def add_geofence_and_verification(clean_log: pd.DataFrame, site_coords: dict) -> pd.DataFrame:
     """
-    Add Distance_From_Site_m, Verification_Status, Verified_Hours to the cleaned log,
-    using a site_coords dict: {Site_Name: (lat, lon), ...}
+    Add Distance_From_Site_m, Verification_Status, Verified_Hours,
+    Distance_km, and Location_Source_Flag to the cleaned log.
     """
     log = clean_log.copy()
 
@@ -175,9 +175,9 @@ def add_geofence_and_verification(clean_log: pd.DataFrame, site_coords: dict) ->
     def status_from_distance(d):
         if pd.isna(d):
             return "No Location/No Site"
-        if d <= 100:
+        if d <= 150:
             return "Verified"
-        if d <= 300:
+        if d <= 400:
             return "Review"
         return "Out of Range"
 
@@ -189,8 +189,26 @@ def add_geofence_and_verification(clean_log: pd.DataFrame, site_coords: dict) ->
         0.0,
     )
 
-    return log
+    # ---- Human-readable distance (km) ----
+    log["Distance_km"] = log["Distance_From_Site_m"] / 1000
 
+    # ---- Explainable location flag ----
+    def location_flag(row):
+        d = row["Distance_From_Site_m"]
+
+        if pd.isna(d):
+            return "No location data"
+        if d <= 150:
+            return "On-site (GPS / Wi-Fi)"
+        if d <= 400:
+            return "Near site (possible GPS drift)"
+        if d <= 5000:
+            return "Off-site (likely Wi-Fi / IP location)"
+        return "Remote location (likely desktop submission)"
+
+    log["Location_Source_Flag"] = log.apply(location_flag, axis=1)
+
+    return log
 
 def build_student_summary(log: pd.DataFrame) -> pd.DataFrame:
     """Summary: total verified hours by student."""
@@ -338,7 +356,21 @@ if site_file is not None and qualtrics_file is not None:
         # Geofence + verification
         verified_log = add_geofence_and_verification(clean_log, site_coords)
         st.subheader("Verified Practicum Log (sample rows)")
-        st.dataframe(verified_log.head(50))
+        st.dataframe(
+            verified_log[
+                [
+                    "Student_ID",
+                    "Site_Name",
+                    "Recorded_Date",
+                    "Distance_km",
+                    "Verification_Status",
+                    "Location_Source_Flag",
+                    "Logged_Hours",
+                    "Verified_Hours",
+                ]
+            ].head(50)
+        )
+
 
         # Summaries
         student_summary = build_student_summary(verified_log)
